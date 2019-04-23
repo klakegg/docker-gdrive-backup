@@ -1,0 +1,48 @@
+#!/bin/sh
+
+if [ ! -e .gdrive-backup ]; then
+  echo "No .drive-backup file found."
+  exit
+fi
+
+if [ "$GDRIVE_KEY" != "" ]; then
+  mkdir -p ~/.gdrive/
+  echo $GDRIVE_KEY | base64 -d > ~/.gdrive/token_v2.json
+fi
+
+mkdir -p .ts
+
+while IFS= read -r line; do
+    target=$(echo $line | cut -d ' ' -f 1)
+    source=$(echo $line | cut -d ' ' -f 2)
+    echo -n "* $target"
+
+    modified=$(gdrive info $source | grep "^Modified: ")
+    modified=${modified:10:19}
+    echo -n " ($modified)"
+
+    ts=".ts/$(echo $target | base64 | sed 's:=::g')"
+    mkdir -p $(dirname $target)
+
+    if [ ! -e $ts ] || [ "$(cat $ts)" != "$modified" ]; then
+      echo " UPDATED"
+
+      case "$target" in
+        *.csv) mime='text/csv' ;;
+        *.ods) mime='application/vnd.oasis.opendocument.spreadsheet' ;;
+        *.pdf) mime='application/pdf' ;;
+        *.txt) mime='text/plain' ;;
+        *.xml) mime='text/plain' ;;
+        *.zip) mime='application/zip' ;;
+        *) echo "Unknown extension." ;;
+      esac
+
+      if [ "$mime" != "" ]; then
+        result=$(gdrive export -f --mime $mime $source)
+        mv "$(echo $result | sed "s:':\t:g" | cut -f 2)" $target
+        echo $modified > $ts
+      fi
+    else
+      echo " SAME"
+    fi
+done < .gdrive-backup
